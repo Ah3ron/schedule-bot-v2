@@ -15,15 +15,14 @@ import (
 )
 
 var allGroups []string
-
 var groupRegex = regexp.MustCompile(`^(\d{2})([А-ЯЁа-яё]+)-.+$`)
 
 func extractYearSpec(group string) (year, spec string) {
 	matches := groupRegex.FindStringSubmatch(group)
-	if len(matches) >= 3 {
-		return matches[1], matches[2]
+	if len(matches) < 3 {
+		return "", ""
 	}
-	return "", ""
+	return matches[1], matches[2]
 }
 
 func getUniqueYears() []string {
@@ -34,7 +33,7 @@ func getUniqueYears() []string {
 			yearSet[year] = struct{}{}
 		}
 	}
-	var years []string
+	years := make([]string, 0, len(yearSet))
 	for year := range yearSet {
 		years = append(years, year)
 	}
@@ -42,6 +41,7 @@ func getUniqueYears() []string {
 	return years
 }
 
+// getSpecsForYear returns a sorted list of specs for a given year.
 func getSpecsForYear(year string) []string {
 	specSet := make(map[string]struct{})
 	for _, group := range allGroups {
@@ -50,7 +50,7 @@ func getSpecsForYear(year string) []string {
 			specSet[spec] = struct{}{}
 		}
 	}
-	var specs []string
+	specs := make([]string, 0, len(specSet))
 	for spec := range specSet {
 		specs = append(specs, spec)
 	}
@@ -59,7 +59,7 @@ func getSpecsForYear(year string) []string {
 }
 
 func getGroupsForYearAndSpec(year string, spec string) []string {
-	var groups []string
+	groups := make([]string, 0)
 	for _, group := range allGroups {
 		gYear, gSpec := extractYearSpec(group)
 		if gYear == year && gSpec == spec {
@@ -78,10 +78,11 @@ func StartBot(token string, db *gorm.DB) {
 
 	b, err := telebot.NewBot(pref)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to create bot: %v", err)
 	}
 
-	mainMenu := &telebot.ReplyMarkup{}
+	// Define inline keyboard buttons and menus
+	mainMenu := &telebot.ReplyMarkup{ResizeKeyboard: true}
 	btnDay := mainMenu.Data("📆 Расписание", "day_schedule")
 	btnSettings := mainMenu.Data("⚙️ Настройки", "settings_menu")
 	mainMenu.Inline(
@@ -89,7 +90,7 @@ func StartBot(token string, db *gorm.DB) {
 		mainMenu.Row(btnSettings),
 	)
 
-	navMenu := &telebot.ReplyMarkup{}
+	navMenu := &telebot.ReplyMarkup{ResizeKeyboard: true}
 	btnPrevMonday := navMenu.Data("<<", "prev_monday")
 	btnPrevDay := navMenu.Data("<", "prev_day")
 	btnToday := navMenu.Data("•", "today")
@@ -101,7 +102,7 @@ func StartBot(token string, db *gorm.DB) {
 		navMenu.Row(btnMain),
 	)
 
-	settingsMenu := &telebot.ReplyMarkup{}
+	settingsMenu := &telebot.ReplyMarkup{ResizeKeyboard: true}
 	btnSetGroup := settingsMenu.Data("Выбрать группу", "set_group")
 	settingsMenu.Inline(
 		settingsMenu.Row(btnSetGroup),
@@ -157,7 +158,8 @@ func StartBot(token string, db *gorm.DB) {
 
 	b.Handle(&btnSetGroup, func(c telebot.Context) error {
 		if err := db.Model(&models.Schedule{}).Select("group_name").Distinct().Order("group_name").Pluck("group_name", &allGroups).Error; err != nil {
-			return err
+			log.Printf("Failed to get groups: %v", err)
+			return c.Edit("Ошибка при загрузке групп. Попробуйте позже.")
 		}
 		return c.Edit("Выберите год поступления:", createYearMenu())
 	})
@@ -225,6 +227,7 @@ func showScheduleForDate(c telebot.Context, db *gorm.DB, dateStr string, navMenu
 
 	var schedules []models.Schedule
 	if err := db.Where(&models.Schedule{GroupName: user.GroupName, Date: dateStr}).Find(&schedules).Error; err != nil {
+		log.Printf("Failed to get schedule: %v", err)
 		return c.Edit("Не удалось получить расписание. Попробуйте позже.")
 	}
 
@@ -281,18 +284,21 @@ func shiftToMonday(dateStr string, direction int) string {
 }
 
 func parseDate(dateStr string) (time.Time, error) {
-	currentYear := time.Now().Year()
-	fullDateStr := fmt.Sprintf("%s.%d", dateStr, currentYear)
-	parsed, err := time.Parse("02.01.2006", fullDateStr)
+	parsed, err := time.Parse("02.01", dateStr)
 	if err != nil {
 		return time.Time{}, err
 	}
+
 	now := time.Now()
-	if parsed.Sub(now) > (6 * 30 * 24 * time.Hour) {
+	currentYear := now.Year()
+	parsed = time.Date(currentYear, parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.Local)
+
+	if parsed.After(now.AddDate(0, 6, 0)) {
 		parsed = parsed.AddDate(-1, 0, 0)
-	} else if now.Sub(parsed) > (6 * 30 * 24 * time.Hour) {
+	} else if parsed.Before(now.AddDate(0, -6, 0)) {
 		parsed = parsed.AddDate(1, 0, 0)
 	}
+
 	return parsed, nil
 }
 
@@ -306,7 +312,7 @@ func shiftDate(dateStr string, delta int) string {
 }
 
 func createYearMenu() *telebot.ReplyMarkup {
-	menu := &telebot.ReplyMarkup{}
+	menu := &telebot.ReplyMarkup{ResizeKeyboard: true}
 	var rows []telebot.Row
 	years := getUniqueYears()
 	for _, year := range years {
@@ -318,7 +324,7 @@ func createYearMenu() *telebot.ReplyMarkup {
 }
 
 func createSpecMenu(year string) *telebot.ReplyMarkup {
-	menu := &telebot.ReplyMarkup{}
+	menu := &telebot.ReplyMarkup{ResizeKeyboard: true}
 	var rows []telebot.Row
 	specs := getSpecsForYear(year)
 	for _, spec := range specs {
@@ -330,7 +336,7 @@ func createSpecMenu(year string) *telebot.ReplyMarkup {
 }
 
 func createGroupMenu(year, spec string) *telebot.ReplyMarkup {
-	menu := &telebot.ReplyMarkup{}
+	menu := &telebot.ReplyMarkup{ResizeKeyboard: true}
 	var rows []telebot.Row
 	groups := getGroupsForYearAndSpec(year, spec)
 	for _, group := range groups {
