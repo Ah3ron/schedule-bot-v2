@@ -21,6 +21,9 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Start the Telegram bot
+	bot.StartBot(cfg.TelegramToken, db)
+
 	// Parse groups and schedules
 	groups, err := parser.ParseGroups()
 	if err != nil {
@@ -36,7 +39,4 @@ func main() {
 	if err := database.SaveSchedules(db, schedules); err != nil {
 		log.Fatal(err)
 	}
-
-	// Start the Telegram bot
-	bot.StartBot(cfg.TelegramToken, db)
 }

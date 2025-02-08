@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,22 +14,9 @@ import (
 
 const baseURL = "https://www.polessu.by/ruz/term2ng/students.html"
 
-// newHTTPClient returns a custom HTTP client that skips TLS certificate verification.
-// WARNING: This bypasses certificate verification and should NOT be used in production.
-func newHTTPClient() *http.Client {
-	// #nosec G402 - InsecureSkipVerify is used intentionally for certificate bypass.
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	return &http.Client{Transport: tr}
-}
-
 // ParseGroups парсит группы из веб-страницы
 func ParseGroups() ([]string, error) {
-	client := newHTTPClient()
-	resp, err := client.Get(baseURL)
+	resp, err := http.Get(baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +42,7 @@ func ParseGroups() ([]string, error) {
 
 // ParseSchedules парсит расписания для всех групп
 func ParseSchedules(groups []string) ([]models.Schedule, error) {
-	client := newHTTPClient()
-	resp, err := client.Get(baseURL)
+	resp, err := http.Get(baseURL)
 	if err != nil {
 		return nil, err
 	}

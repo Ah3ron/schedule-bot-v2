@@ -13,7 +13,6 @@ func InitDB(dsn string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// Миграция схемы
 	if err := db.AutoMigrate(&models.Schedule{}); err != nil {
 		return nil, err
 	}
@@ -21,6 +20,16 @@ func InitDB(dsn string) (*gorm.DB, error) {
 	return db, nil
 }
 
-func SaveSchedules(db *gorm.DB, schedules []models.Schedule) error {
-	return db.Create(&schedules).Error
+func SaveSchedulesBatch(db *gorm.DB, schedules []models.Schedule) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM schedules").Error; err != nil {
+			return err
+		}
+
+		if err := tx.Create(&schedules).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
