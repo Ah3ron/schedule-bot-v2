@@ -36,8 +36,8 @@ func StartBot(token string, db *gorm.DB) {
 
 		group := args[0]
 		var schedules []models.Schedule
-		// Query the database for the schedule of the specified group.
-		if err := db.Where("group = ?", group).Find(&schedules).Error; err != nil {
+
+		if err := db.Where(&models.Schedule{Group: group}).Find(&schedules).Error; err != nil {
 			return c.Send("Группа не найдена или произошла ошибка при получении расписания.")
 		}
 
