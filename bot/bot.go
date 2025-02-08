@@ -82,10 +82,11 @@ func StartBot(token string, db *gorm.DB) {
 	}
 
 	mainMenu := &telebot.ReplyMarkup{}
-	btnDay := mainMenu.Data("Расписание на день", "day_schedule")
-	btnSettings := mainMenu.Data("Настройки", "settings_menu")
+	btnDay := mainMenu.Data("📆 Расписание", "day_schedule")
+	btnSettings := mainMenu.Data("⚙️ Настройки", "settings_menu")
 	mainMenu.Inline(
-		mainMenu.Row(btnDay, btnSettings),
+		mainMenu.Row(btnDay),
+		mainMenu.Row(btnSettings),
 	)
 
 	navMenu := &telebot.ReplyMarkup{}
@@ -143,6 +144,10 @@ func StartBot(token string, db *gorm.DB) {
 		dateStr := parseDateFromMessage(c.Message().Text)
 		nextMonday := shiftToMonday(dateStr, +1)
 		return showScheduleForDate(c, db, nextMonday, navMenu)
+	})
+
+	b.Handle(&btnMain, func(c telebot.Context) error {
+		return c.Edit("Добро пожаловать!\nВыберите действие:", mainMenu)
 	})
 
 	b.Handle(&btnSettings, func(c telebot.Context) error {
@@ -205,7 +210,7 @@ func StartBot(token string, db *gorm.DB) {
 				return c.Edit("Ошибка обновления группы. Попробуйте позже.")
 			}
 		}
-		return c.Edit(fmt.Sprintf("Ваша группа установлена: %s", group))
+		return c.Edit(fmt.Sprintf("Ваша группа установлена: %s", group), mainMenu)
 	})
 
 	b.Start()
@@ -227,21 +232,27 @@ func showScheduleForDate(c telebot.Context, db *gorm.DB, dateStr string, navMenu
 		return c.Edit(fmt.Sprintf("Расписание на %s для группы %s не найдено.", dateStr, user.GroupName), navMenu)
 	}
 
-	response := fmt.Sprintf("📅 Расписание на %s для группы %s:\n\n",
-		formatFullDate(dateStr), user.GroupName)
+	println(dateStr)
+	response := fmt.Sprintf("📅 Расписание на %s для группы %s:\n\n", dateStr, user.GroupName)
 	for _, sched := range schedules {
-		response += fmt.Sprintf("⏰ %s\n📚 %s\n👨‍🏫 %s\n🏫 %s\n🔢 %s\n\n",
-			sched.Time, sched.Subject, sched.Teacher, sched.Room, sched.Subgroup)
+		if sched.Time != "" {
+			response += fmt.Sprintf("*Время*: _%s_\n", sched.Time)
+		}
+		if sched.Subject != "" {
+			response += fmt.Sprintf("*Пара*: _%s_\n", sched.Subject)
+		}
+		if sched.Teacher != "" {
+			response += fmt.Sprintf("*Препод.*: _%s_\n", sched.Teacher)
+		}
+		if sched.Room != "" {
+			response += fmt.Sprintf("*Аудит.*: _%s_\n", sched.Room)
+		}
+		if sched.Subgroup != "" {
+			response += fmt.Sprintf("*Подгруппа*: _%s_\n", sched.Subgroup)
+		}
+		response += "\n"
 	}
-	return c.Edit(response, navMenu)
-}
-
-func formatFullDate(dateStr string) string {
-	date, err := parseDate(dateStr)
-	if err != nil {
-		return dateStr
-	}
-	return date.Format("02.01.2006")
+	return c.Edit(response, navMenu, telebot.ModeMarkdown)
 }
 
 func parseDateFromMessage(text string) string {
