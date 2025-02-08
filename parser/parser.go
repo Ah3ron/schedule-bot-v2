@@ -7,24 +7,25 @@ import (
 	"regexp"
 	"strings"
 
-	"schedule-bot/models" // Убедитесь, что вы импортируете правильный пакет
+	"schedule-bot/models"
 
 	"github.com/PuerkitoBio/goquery"
 )
 
 const baseURL = "https://www.polessu.by/ruz/term2ng/students.html"
 
-// ParseGroups парсит группы из веб-страницы
-func ParseGroups() ([]string, error) {
+var schedules []models.Schedule
+
+func ParseAllSchedules() ([]models.Schedule, error) {
 	resp, err := http.Get(baseURL)
 	if err != nil {
-		return nil, err
+		return []models.Schedule{}, err
 	}
 	defer resp.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return nil, err
+		return []models.Schedule{}, err
 	}
 
 	var groups []string
@@ -37,24 +38,7 @@ func ParseGroups() ([]string, error) {
 		})
 	})
 
-	return groups, nil
-}
-
-// ParseSchedules парсит расписания для всех групп
-func ParseSchedules(groups []string) ([]models.Schedule, error) {
-	resp, err := http.Get(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	var schedules []models.Schedule
-
 	for _, group := range groups {
 		schedule, err := parseScheduleForGroup(doc, group)
 		if err != nil {
@@ -67,18 +51,15 @@ func ParseSchedules(groups []string) ([]models.Schedule, error) {
 	return schedules, nil
 }
 
-// parseScheduleForGroup парсит расписание для конкретной группы
 func parseScheduleForGroup(doc *goquery.Document, group string) (models.Schedule, error) {
 	var schedule models.Schedule
 	schedule.Group = group
 
-	// Найдите таблицу для группы
 	table := findGroupTable(doc, group)
 	if table == nil {
 		return schedule, fmt.Errorf("таблица для группы %s не найдена", group)
 	}
 
-	// Парсинг расписания
 	table.Find("thead tr:nth-child(2) th.xAxis").Each(func(i int, s *goquery.Selection) {
 		date := strings.TrimSpace(s.Text())
 
@@ -106,7 +87,6 @@ func parseScheduleForGroup(doc *goquery.Document, group string) (models.Schedule
 				teacher := strings.TrimSpace(cell.Find(".teacher").Text())
 				room := strings.TrimSpace(cell.Find(".room").Text())
 
-				// Добавление расписания
 				if subject != "" {
 					schedule.Date = date
 					schedule.Time = timeRange
@@ -122,7 +102,6 @@ func parseScheduleForGroup(doc *goquery.Document, group string) (models.Schedule
 	return schedule, nil
 }
 
-// findGroupTable находит таблицу для заданной группы
 func findGroupTable(doc *goquery.Document, groupName string) *goquery.Selection {
 	var table *goquery.Selection
 	doc.Find("table").Each(func(i int, s *goquery.Selection) {

@@ -9,34 +9,26 @@ import (
 )
 
 func main() {
-	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Ошибка загрузки конфигурации:", err)
 	}
 
-	// Initialize database
 	db, err := database.InitDB(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Ошибка подключения к БД:", err)
 	}
 
-	// Parse groups and schedules
-	groups, err := parser.ParseGroups()
+	allSchedules, err := parser.ParseAllSchedules()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Ошибка парсинга расписаний:", err)
 	}
 
-	schedules, err := parser.ParseSchedules(groups)
-	if err != nil {
-		log.Fatal(err)
+	if err := database.SaveSchedules(db, allSchedules); err != nil {
+		log.Fatal("Ошибка сохранения расписаний:", err)
 	}
 
-	// Save schedules to the database
-	if err := database.SaveSchedules(db, schedules); err != nil {
-		log.Fatal(err)
-	}
+	go bot.StartBot(cfg.TelegramToken, db)
 
-	// Start the Telegram bot
-	bot.StartBot(cfg.TelegramToken, db)
+	select {}
 }
