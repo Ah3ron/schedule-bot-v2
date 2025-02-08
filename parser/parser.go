@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -19,97 +18,88 @@ var schedules []models.Schedule
 func ParseAllSchedules() ([]models.Schedule, error) {
 	resp, err := http.Get(baseURL)
 	if err != nil {
-		return []models.Schedule{}, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return []models.Schedule{}, err
+		return nil, err
 	}
-
-	var groups []string
-	doc.Find("table.iksweb2 tr").Each(func(_ int, row *goquery.Selection) {
-		row.Find("td:not(:first-child) a").Each(func(_ int, link *goquery.Selection) {
-			group := strings.TrimSpace(link.Text())
-			if group != "" {
-				groups = append(groups, group)
-			}
-		})
-	})
 
 	var schedules []models.Schedule
-	for _, group := range groups {
-		schedule, err := parseScheduleForGroup(doc, group)
-		if err != nil {
-			log.Printf("Ошибка при парсинге расписания для группы %s: %v", group, err)
-			continue
+
+	doc.Find("table.odd_table, table.even_table").Each(func(_ int, table *goquery.Selection) {
+		group := ""
+		table.Find("thead tr").First().Find("th[colspan]").EachWithBreak(func(_ int, th *goquery.Selection) bool {
+			group = strings.TrimSpace(th.Text())
+			if group != "" {
+				return false
+			}
+			return true
+		})
+		if group == "" {
+			// If not found, try to fetch from the caption if it holds group info.
+			caption := table.Find("caption").Text()
+			// Attempt to extract group from caption if possible.
+			// In our example the caption does not include group info,
+			// so we will skip this table if group cannot be determined.
+			log.Printf("Группа не найдена в таблице, пропускаем таблицу (caption: %s)", caption)
+			return
 		}
-		schedules = append(schedules, schedule)
-	}
 
-	return schedules, nil
-}
+		var dates []string
+		table.Find("thead tr").Eq(1).Find("th.xAxis").Each(func(_ int, th *goquery.Selection) {
+			date := strings.TrimSpace(th.Text())
+			if date != "" {
+				dates = append(dates, date)
+			}
+		})
+		if len(dates) == 0 {
+			log.Printf("Не найдены даты для группы %s", group)
+			return
+		}
 
-func parseScheduleForGroup(doc *goquery.Document, group string) (models.Schedule, error) {
-	var schedule models.Schedule
-	schedule.Group = group
-
-	table := findGroupTable(doc, group)
-	if table == nil {
-		return schedule, fmt.Errorf("таблица для группы %s не найдена", group)
-	}
-
-	table.Find("thead tr:nth-child(2) th.xAxis").Each(func(i int, s *goquery.Selection) {
-		date := strings.TrimSpace(s.Text())
-
-		table.Find("tbody tr").Not(".foot").Each(func(j int, row *goquery.Selection) {
+		table.Find("tbody tr").Not(".foot").Each(func(_ int, row *goquery.Selection) {
 			timeCell := row.Find("th.yAxis")
 			if timeCell.Length() == 0 {
 				return
 			}
-
 			timeStr := strings.TrimSpace(timeCell.Text())
-			timeStr = regexp.MustCompile(`\s+`).ReplaceAllString(timeStr, "")
-			timeParts := strings.SplitN(timeStr, "-", 2)
-			if len(timeParts) != 2 {
-				return
-			}
-			timeRange := fmt.Sprintf("%s-%s", timeParts[0], timeParts[1])
+			timeStr = regexp.MustCompile(`\s+`).ReplaceAllString(timeStr, " ")
 
-			row.Find("td").Each(func(k int, cell *goquery.Selection) {
+			cells := row.Find("td")
+			cells.Each(func(i int, cell *goquery.Selection) {
 				if cell.HasClass("empty") {
 					return
 				}
 
-				subgroup := strings.TrimSpace(cell.Find(".studentsset").Text())
-				subject := strings.TrimSpace(cell.Find(".subject").Text())
-				teacher := strings.TrimSpace(cell.Find(".teacher").Text())
-				room := strings.TrimSpace(cell.Find(".room").Text())
+				subgroup := strings.TrimSpace(cell.Find(".studentsset").First().Text())
+				subject := strings.TrimSpace(cell.Find(".subject").First().Text())
+				teacher := strings.TrimSpace(cell.Find(".teacher").First().Text())
+				room := strings.TrimSpace(cell.Find(".room").First().Text())
 
-				if subject != "" {
-					schedule.Date = date
-					schedule.Time = timeRange
-					schedule.Subject = subject
-					schedule.Teacher = teacher
-					schedule.Room = room
-					schedule.Subgroup = subgroup
+				if subject == "" {
+					return
 				}
+
+				if i >= len(dates) {
+					log.Printf("Количество ячеек (%d) превышает число дат (%d) для группы %s", i+1, len(dates), group)
+					return
+				}
+
+				schedule := models.Schedule{
+					Group:    group,
+					Date:     dates[i],
+					Time:     timeStr,
+					Subject:  subject,
+					Teacher:  teacher,
+					Room:     room,
+					Subgroup: subgroup,
+				}
+				schedules = append(schedules, schedule)
 			})
 		})
 	})
-
-	return schedule, nil
-}
-
-func findGroupTable(doc *goquery.Document, groupName string) *goquery.Selection {
-	var table *goquery.Selection
-	doc.Find("table").Each(func(i int, s *goquery.Selection) {
-		header := s.Find("thead tr:first-child th:contains('" + groupName + "')")
-		if header.Length() > 0 {
-			table = s
-			return
-		}
-	})
-	return table
+	return schedules, nil
 }
