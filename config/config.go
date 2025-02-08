@@ -10,5 +10,8 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
-	return Config{DatabaseURL: os.Getenv("DATABASE_URL"), TelegramToken: os.Getenv("TELEGRAM_TOKEN")}, nil
+	config := Config{DatabaseURL: os.Getenv("DATABASE_URL"), TelegramToken: os.Getenv("TELEGRAM_TOKEN")}
+	println(config.DatabaseURL)
+	println(config.TelegramToken)
+	return config, nil
 }
