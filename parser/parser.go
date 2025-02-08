@@ -80,13 +80,13 @@ func ParseAllSchedules() ([]models.Schedule, error) {
 				}
 
 				schedule := models.Schedule{
-					Group:    group,
-					Date:     dates[i],
-					Time:     timeStr,
-					Subject:  subject,
-					Teacher:  teacher,
-					Room:     room,
-					Subgroup: subgroup,
+					GroupName: group,
+					Date:      dates[i],
+					Time:      timeStr,
+					Subject:   subject,
+					Teacher:   teacher,
+					Room:      room,
+					Subgroup:  subgroup,
 				}
 				schedules = append(schedules, schedule)
 			})
