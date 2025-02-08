@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,9 +15,22 @@ import (
 
 const baseURL = "https://www.polessu.by/ruz/term2ng/students.html"
 
+// newHTTPClient returns a custom HTTP client that skips TLS certificate verification.
+// WARNING: This bypasses certificate verification and should NOT be used in production.
+func newHTTPClient() *http.Client {
+	// #nosec G402 - InsecureSkipVerify is used intentionally for certificate bypass.
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	return &http.Client{Transport: tr}
+}
+
 // ParseGroups парсит группы из веб-страницы
 func ParseGroups() ([]string, error) {
-	resp, err := http.Get(baseURL)
+	client := newHTTPClient()
+	resp, err := client.Get(baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +56,8 @@ func ParseGroups() ([]string, error) {
 
 // ParseSchedules парсит расписания для всех групп
 func ParseSchedules(groups []string) ([]models.Schedule, error) {
-	resp, err := http.Get(baseURL)
+	client := newHTTPClient()
+	resp, err := client.Get(baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +109,7 @@ func parseScheduleForGroup(doc *goquery.Document, group string) (models.Schedule
 			if len(timeParts) != 2 {
 				return
 			}
-			time := fmt.Sprintf("%s-%s", timeParts[0], timeParts[1])
+			timeRange := fmt.Sprintf("%s-%s", timeParts[0], timeParts[1])
 
 			row.Find("td").Each(func(k int, cell *goquery.Selection) {
 				if cell.HasClass("empty") {
@@ -109,7 +124,7 @@ func parseScheduleForGroup(doc *goquery.Document, group string) (models.Schedule
 				// Добавление расписания
 				if subject != "" {
 					schedule.Date = date
-					schedule.Time = time
+					schedule.Time = timeRange
 					schedule.Subject = subject
 					schedule.Teacher = teacher
 					schedule.Room = room
