@@ -13,8 +13,6 @@ import (
 
 const baseURL = "https://www.polessu.by/ruz/term2ng/students.html"
 
-var schedules []models.Schedule
-
 func ParseAllSchedules() ([]models.Schedule, error) {
 	resp, err := http.Get(baseURL)
 	if err != nil {
@@ -33,17 +31,10 @@ func ParseAllSchedules() ([]models.Schedule, error) {
 		group := ""
 		table.Find("thead tr").First().Find("th[colspan]").EachWithBreak(func(_ int, th *goquery.Selection) bool {
 			group = strings.TrimSpace(th.Text())
-			if group != "" {
-				return false
-			}
-			return true
+			return group == ""
 		})
 		if group == "" {
-			// If not found, try to fetch from the caption if it holds group info.
 			caption := table.Find("caption").Text()
-			// Attempt to extract group from caption if possible.
-			// In our example the caption does not include group info,
-			// so we will skip this table if group cannot be determined.
 			log.Printf("Группа не найдена в таблице, пропускаем таблицу (caption: %s)", caption)
 			return
 		}
@@ -68,7 +59,7 @@ func ParseAllSchedules() ([]models.Schedule, error) {
 			timeStr := strings.TrimSpace(timeCell.Text())
 			timeStr = regexp.MustCompile(`\s+`).ReplaceAllString(timeStr, " ")
 
-			cells := row.Find("td")
+			cells := row.ChildrenFiltered("td")
 			cells.Each(func(i int, cell *goquery.Selection) {
 				if cell.HasClass("empty") {
 					return
