@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"schedule-bot/models"
@@ -12,7 +14,61 @@ import (
 	"gorm.io/gorm"
 )
 
-var pendingGroupSelection = make(map[int64]bool)
+var allGroups []string
+
+var groupRegex = regexp.MustCompile(`^(\d{2})([А-ЯЁа-яё]+)-.+$`)
+
+func extractYearSpec(group string) (year, spec string) {
+	matches := groupRegex.FindStringSubmatch(group)
+	if len(matches) >= 3 {
+		return matches[1], matches[2]
+	}
+	return "", ""
+}
+
+func getUniqueYears() []string {
+	yearSet := make(map[string]struct{})
+	for _, group := range allGroups {
+		year, _ := extractYearSpec(group)
+		if year != "" {
+			yearSet[year] = struct{}{}
+		}
+	}
+	var years []string
+	for year := range yearSet {
+		years = append(years, year)
+	}
+	sort.Strings(years)
+	return years
+}
+
+func getSpecsForYear(year string) []string {
+	specSet := make(map[string]struct{})
+	for _, group := range allGroups {
+		gYear, spec := extractYearSpec(group)
+		if gYear == year && spec != "" {
+			specSet[spec] = struct{}{}
+		}
+	}
+	var specs []string
+	for spec := range specSet {
+		specs = append(specs, spec)
+	}
+	sort.Strings(specs)
+	return specs
+}
+
+func getGroupsForYearAndSpec(year string, spec string) []string {
+	var groups []string
+	for _, group := range allGroups {
+		gYear, gSpec := extractYearSpec(group)
+		if gYear == year && gSpec == spec {
+			groups = append(groups, group)
+		}
+	}
+	sort.Strings(groups)
+	return groups
+}
 
 func StartBot(token string, db *gorm.DB) {
 	pref := telebot.Settings{
@@ -26,18 +82,22 @@ func StartBot(token string, db *gorm.DB) {
 	}
 
 	mainMenu := &telebot.ReplyMarkup{}
-	btnToday := mainMenu.Data("Расписание на сегодня", "today_schedule")
+	btnDay := mainMenu.Data("Расписание на день", "day_schedule")
 	btnSettings := mainMenu.Data("Настройки", "settings_menu")
 	mainMenu.Inline(
-		mainMenu.Row(btnToday, btnSettings),
+		mainMenu.Row(btnDay, btnSettings),
 	)
 
 	navMenu := &telebot.ReplyMarkup{}
-	btnPrev := navMenu.Data("◀ Назад", "prev_day")
-	btnNext := navMenu.Data("Вперёд ▶", "next_day")
+	btnPrevMonday := navMenu.Data("<<", "prev_monday")
+	btnPrevDay := navMenu.Data("<", "prev_day")
+	btnToday := navMenu.Data("•", "today")
+	btnNextDay := navMenu.Data(">", "next_day")
+	btnNextMonday := navMenu.Data(">>", "next_monday")
 	btnMain := navMenu.Data("Меню", "main_menu")
 	navMenu.Inline(
-		navMenu.Row(btnPrev, btnMain, btnNext),
+		navMenu.Row(btnPrevMonday, btnPrevDay, btnToday, btnNextDay, btnNextMonday),
+		navMenu.Row(btnMain),
 	)
 
 	settingsMenu := &telebot.ReplyMarkup{}
@@ -47,31 +107,42 @@ func StartBot(token string, db *gorm.DB) {
 	)
 
 	b.Handle("/start", func(c telebot.Context) error {
-		pendingGroupSelection[c.Sender().ID] = false
 		welcome := "Добро пожаловать!\nВыберите действие:"
 		return c.Send(welcome, mainMenu)
 	})
 
-	b.Handle(&btnToday, func(c telebot.Context) error {
-		today := time.Now()
-		dateStr := fmt.Sprintf("%02d.%02d", today.Day(), int(today.Month()))
-		return showScheduleForDate(c, db, dateStr, navMenu)
+	b.Handle(&btnPrevMonday, func(c telebot.Context) error {
+		dateStr := parseDateFromMessage(c.Message().Text)
+		prevMonday := shiftToMonday(dateStr, -1)
+		return showScheduleForDate(c, db, prevMonday, navMenu)
 	})
 
-	b.Handle(&btnPrev, func(c telebot.Context) error {
+	b.Handle(&btnPrevDay, func(c telebot.Context) error {
 		dateStr := parseDateFromMessage(c.Message().Text)
 		prevDate := shiftDate(dateStr, -1)
 		return showScheduleForDate(c, db, prevDate, navMenu)
 	})
 
-	b.Handle(&btnNext, func(c telebot.Context) error {
+	b.Handle(&btnDay, func(c telebot.Context) error {
+		today := time.Now().Format("02.01")
+		return showScheduleForDate(c, db, today, navMenu)
+	})
+
+	b.Handle(&btnToday, func(c telebot.Context) error {
+		today := time.Now().Format("02.01")
+		return showScheduleForDate(c, db, today, navMenu)
+	})
+
+	b.Handle(&btnNextDay, func(c telebot.Context) error {
 		dateStr := parseDateFromMessage(c.Message().Text)
 		nextDate := shiftDate(dateStr, +1)
 		return showScheduleForDate(c, db, nextDate, navMenu)
 	})
 
-	b.Handle(&btnMain, func(c telebot.Context) error {
-		return c.Edit("Меню:", mainMenu)
+	b.Handle(&btnNextMonday, func(c telebot.Context) error {
+		dateStr := parseDateFromMessage(c.Message().Text)
+		nextMonday := shiftToMonday(dateStr, +1)
+		return showScheduleForDate(c, db, nextMonday, navMenu)
 	})
 
 	b.Handle(&btnSettings, func(c telebot.Context) error {
@@ -80,36 +151,61 @@ func StartBot(token string, db *gorm.DB) {
 	})
 
 	b.Handle(&btnSetGroup, func(c telebot.Context) error {
-		pendingGroupSelection[c.Sender().ID] = true
-		msg := "Пожалуйста, введите название группы (например: 22ИТ-1):"
-		return c.Edit(msg)
+		if err := db.Model(&models.Schedule{}).Select("group_name").Distinct().Order("group_name").Pluck("group_name", &allGroups).Error; err != nil {
+			return err
+		}
+		return c.Edit("Выберите год поступления:", createYearMenu())
 	})
 
-	b.Handle(telebot.OnText, func(c telebot.Context) error {
-		senderID := c.Sender().ID
-		if pendingGroupSelection[senderID] {
-			group := c.Text()
-			if group == "" {
-				return c.Send("Название группы не может быть пустым.")
-			}
-			user := models.User{ID: senderID}
-			if err := db.First(&user).Error; err != nil {
-				user.GroupName = group
-				if err := db.Create(&user).Error; err != nil {
-					log.Printf("Ошибка сохранения пользователя: %v", err)
-					return c.Send("Ошибка сохранения группы. Попробуйте позже.")
-				}
-			} else {
-				user.GroupName = group
-				if err := db.Save(&user).Error; err != nil {
-					log.Printf("Ошибка обновления пользователя: %v", err)
-					return c.Send("Ошибка обновления группы. Попробуйте позже.")
-				}
-			}
-			pendingGroupSelection[senderID] = false
-			return c.Send(fmt.Sprintf("Ваша группа установлена: %s", group))
+	b.Handle(&telebot.Btn{Unique: "select_year"}, func(c telebot.Context) error {
+		data := c.Data()
+		parts := strings.SplitN(data, "_", 2)
+		if len(parts) != 2 {
+			return c.Respond(&telebot.CallbackResponse{Text: "Некорректные данные."})
 		}
-		return nil
+		year := parts[1]
+		return c.Edit(fmt.Sprintf("Вы выбрали год %s. Теперь выберите специальность:", year),
+			createSpecMenu(year))
+	})
+
+	b.Handle(&telebot.Btn{Unique: "select_spec"}, func(c telebot.Context) error {
+		data := c.Data()
+		parts := strings.SplitN(data, "_", 3)
+		if len(parts) != 3 {
+			return c.Respond(&telebot.CallbackResponse{Text: "Некорректные данные."})
+		}
+		year, spec := parts[1], parts[2]
+		return c.Edit(fmt.Sprintf("Вы выбрали специальность %s для года %s. Выберите группу:", spec, year),
+			createGroupMenu(year, spec))
+	})
+
+	b.Handle(&telebot.Btn{Unique: "select_group"}, func(c telebot.Context) error {
+		data := c.Data()
+		parts := strings.SplitN(data, "_", 2)
+		if len(parts) != 2 {
+			return c.Respond(&telebot.CallbackResponse{Text: "Некорректные данные."})
+		}
+		group := parts[1]
+		senderID := c.Sender().ID
+
+		var user models.User
+		if err := db.First(&user, "id = ?", senderID).Error; err != nil {
+			user = models.User{
+				ID:        senderID,
+				GroupName: group,
+			}
+			if err := db.Create(&user).Error; err != nil {
+				log.Printf("Ошибка сохранения пользователя: %v", err)
+				return c.Edit("Ошибка сохранения группы. Попробуйте позже.")
+			}
+		} else {
+			user.GroupName = group
+			if err := db.Save(&user).Error; err != nil {
+				log.Printf("Ошибка обновления пользователя: %v", err)
+				return c.Edit("Ошибка обновления группы. Попробуйте позже.")
+			}
+		}
+		return c.Edit(fmt.Sprintf("Ваша группа установлена: %s", group))
 	})
 
 	b.Start()
@@ -131,13 +227,21 @@ func showScheduleForDate(c telebot.Context, db *gorm.DB, dateStr string, navMenu
 		return c.Edit(fmt.Sprintf("Расписание на %s для группы %s не найдено.", dateStr, user.GroupName), navMenu)
 	}
 
-	response := fmt.Sprintf("📅 Расписание на %s для группы %s:\n\n", dateStr, user.GroupName)
+	response := fmt.Sprintf("📅 Расписание на %s для группы %s:\n\n",
+		formatFullDate(dateStr), user.GroupName)
 	for _, sched := range schedules {
 		response += fmt.Sprintf("⏰ %s\n📚 %s\n👨‍🏫 %s\n🏫 %s\n🔢 %s\n\n",
 			sched.Time, sched.Subject, sched.Teacher, sched.Room, sched.Subgroup)
 	}
-
 	return c.Edit(response, navMenu)
+}
+
+func formatFullDate(dateStr string) string {
+	date, err := parseDate(dateStr)
+	if err != nil {
+		return dateStr
+	}
+	return date.Format("02.01.2006")
 }
 
 func parseDateFromMessage(text string) string {
@@ -150,16 +254,76 @@ func parseDateFromMessage(text string) string {
 	return fmt.Sprintf("%02d.%02d", now.Day(), int(now.Month()))
 }
 
-func shiftDate(dateStr string, delta int) string {
-	var day, month int
-	_, err := fmt.Sscanf(dateStr, "%02d.%02d", &day, &month)
+func shiftToMonday(dateStr string, direction int) string {
+	date, err := parseDate(dateStr)
 	if err != nil {
-		now := time.Now()
-		day = now.Day()
-		month = int(now.Month())
+		date = time.Now()
 	}
+
+	offset := (int(date.Weekday()) + 6) % 7
+	currentMonday := date.AddDate(0, 0, -offset)
+
+	shifted := currentMonday.AddDate(0, 0, direction*7)
+	return shifted.Format("02.01")
+}
+
+func parseDate(dateStr string) (time.Time, error) {
 	currentYear := time.Now().Year()
-	orig := time.Date(currentYear, time.Month(month), day, 0, 0, 0, 0, time.Local)
-	shifted := orig.AddDate(0, 0, delta)
-	return fmt.Sprintf("%02d.%02d", shifted.Day(), int(shifted.Month()))
+	fullDateStr := fmt.Sprintf("%s.%d", dateStr, currentYear)
+	parsed, err := time.Parse("02.01.2006", fullDateStr)
+	if err != nil {
+		return time.Time{}, err
+	}
+	now := time.Now()
+	if parsed.Sub(now) > (6 * 30 * 24 * time.Hour) {
+		parsed = parsed.AddDate(-1, 0, 0)
+	} else if now.Sub(parsed) > (6 * 30 * 24 * time.Hour) {
+		parsed = parsed.AddDate(1, 0, 0)
+	}
+	return parsed, nil
+}
+
+func shiftDate(dateStr string, delta int) string {
+	date, err := parseDate(dateStr)
+	if err != nil {
+		date = time.Now()
+	}
+	shifted := date.AddDate(0, 0, delta)
+	return shifted.Format("02.01")
+}
+
+func createYearMenu() *telebot.ReplyMarkup {
+	menu := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+	years := getUniqueYears()
+	for _, year := range years {
+		btn := menu.Data(year, "select_year", fmt.Sprintf("year_%s", year))
+		rows = append(rows, menu.Row(btn))
+	}
+	menu.Inline(rows...)
+	return menu
+}
+
+func createSpecMenu(year string) *telebot.ReplyMarkup {
+	menu := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+	specs := getSpecsForYear(year)
+	for _, spec := range specs {
+		btn := menu.Data(spec, "select_spec", fmt.Sprintf("spec_%s_%s", year, spec))
+		rows = append(rows, menu.Row(btn))
+	}
+	menu.Inline(rows...)
+	return menu
+}
+
+func createGroupMenu(year, spec string) *telebot.ReplyMarkup {
+	menu := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+	groups := getGroupsForYearAndSpec(year, spec)
+	for _, group := range groups {
+		btn := menu.Data(group, "select_group", fmt.Sprintf("group_%s", group))
+		rows = append(rows, menu.Row(btn))
+	}
+	menu.Inline(rows...)
+	return menu
 }
