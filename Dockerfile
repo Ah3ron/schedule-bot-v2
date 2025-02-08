@@ -9,7 +9,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o schedule-bot ./main.go
 
-FROM scratch
+FROM alpine:latest
 
 COPY --from=builder /app/schedule-bot /schedule-bot
 
