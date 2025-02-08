@@ -1,14 +1,17 @@
 package models
 
-import "gorm.io/gorm"
-
 type Schedule struct {
-	gorm.Model
-	GroupName string // Название группы
-	Date      string // Дата занятия
-	Time      string // Время занятия
-	Subject   string // Название предмета
-	Teacher   string // Имя преподавателя
-	Room      string // Номер аудитории
-	Subgroup  string // Подгруппа (если есть)
+	ID        uint
+	GroupName string
+	Date      string
+	Time      string
+	Subject   string
+	Teacher   string
+	Room      string
+	Subgroup  string
+}
+
+type User struct {
+	ID        int64 `gorm:"primaryKey"`
+	GroupName string
 }

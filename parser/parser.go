@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"schedule-bot/models"
 
@@ -33,6 +34,10 @@ func ParseAllSchedules() ([]models.Schedule, error) {
 			group = strings.TrimSpace(th.Text())
 			return group == ""
 		})
+		if !unicode.IsDigit(rune(group[0])) {
+			println("Skipping table with digit group number:", group)
+			return
+		}
 		if group == "" {
 			caption := table.Find("caption").Text()
 			log.Printf("Группа не найдена в таблице, пропускаем таблицу (caption: %s)", caption)
