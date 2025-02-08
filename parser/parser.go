@@ -41,7 +41,7 @@ func ParseAllSchedules() ([]models.Schedule, error) {
 
 		var dates []string
 		table.Find("thead tr").Eq(1).Find("th.xAxis").Each(func(_ int, th *goquery.Selection) {
-			date := strings.TrimSpace(th.Text())
+			date := strings.TrimSpace(th.Text()[4:])
 			if date != "" {
 				dates = append(dates, date)
 			}
