@@ -12,7 +12,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-const baseURL = "https://www.polessu.by/ruz/term2ng/"
+const baseURL = "https://www.polessu.by/ruz/term2ng/students.html"
 
 // ParseGroups парсит группы из веб-страницы
 func ParseGroups() ([]string, error) {
