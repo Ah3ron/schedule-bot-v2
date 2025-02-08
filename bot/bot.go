@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"log"
+
 	"schedule-bot/models"
 
 	"gopkg.in/telebot.v3"
@@ -20,13 +21,22 @@ func StartBot(token string, db *gorm.DB) {
 		log.Fatal(err)
 	}
 
+	// Handler for the /start command.
 	b.Handle("/start", func(c telebot.Context) error {
 		return c.Send("Добро пожаловать! Используйте команду /schedule <группа> для получения расписания.")
 	})
 
+	// Handler for the /schedule command with safety checks for arguments.
 	b.Handle("/schedule", func(c telebot.Context) error {
-		group := c.Args()[0]
+		args := c.Args()
+		// Check if any argument is provided.
+		if len(args) == 0 {
+			return c.Send("Пожалуйста, укажите группу. Пример: /schedule группа1")
+		}
+
+		group := args[0]
 		var schedules []models.Schedule
+		// Query the database for the schedule of the specified group.
 		if err := db.Where("group = ?", group).Find(&schedules).Error; err != nil {
 			return c.Send("Группа не найдена или произошла ошибка при получении расписания.")
 		}
