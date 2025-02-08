@@ -232,27 +232,29 @@ func showScheduleForDate(c telebot.Context, db *gorm.DB, dateStr string, navMenu
 		return c.Edit(fmt.Sprintf("Расписание на %s для группы %s не найдено.", dateStr, user.GroupName), navMenu)
 	}
 
-	println(dateStr)
-	response := fmt.Sprintf("📅 Расписание на %s для группы %s:\n\n", dateStr, user.GroupName)
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("📅 Расписание на %s для группы %s:\n\n", dateStr, user.GroupName))
+
 	for _, sched := range schedules {
 		if sched.Time != "" {
-			response += fmt.Sprintf("*Время*: _%s_\n", sched.Time)
+			builder.WriteString(fmt.Sprintf("*Время*: _%s_\n", sched.Time))
 		}
 		if sched.Subject != "" {
-			response += fmt.Sprintf("*Пара*: _%s_\n", sched.Subject)
+			builder.WriteString(fmt.Sprintf("*Пара*: _%s_\n", sched.Subject))
 		}
 		if sched.Teacher != "" {
-			response += fmt.Sprintf("*Препод.*: _%s_\n", sched.Teacher)
+			builder.WriteString(fmt.Sprintf("*Препод.*: _%s_\n", sched.Teacher))
 		}
 		if sched.Room != "" {
-			response += fmt.Sprintf("*Аудит.*: _%s_\n", sched.Room)
+			builder.WriteString(fmt.Sprintf("*Аудит.*: _%s_\n", sched.Room))
 		}
 		if sched.Subgroup != "" {
-			response += fmt.Sprintf("*Подгруппа*: _%s_\n", sched.Subgroup)
+			builder.WriteString(fmt.Sprintf("*Подгруппа*: _%s_\n", sched.Subgroup))
 		}
-		response += "\n"
+		builder.WriteString("\n")
 	}
-	return c.Edit(response, navMenu, telebot.ModeMarkdown)
+
+	return c.Edit(builder.String(), navMenu, telebot.ModeMarkdown)
 }
 
 func parseDateFromMessage(text string) string {
