@@ -20,7 +20,7 @@ func InitDB(dsn string) (*gorm.DB, error) {
 	return db, nil
 }
 
-func SaveSchedulesBatch(db *gorm.DB, schedules []models.Schedule) error {
+func SaveSchedules(db *gorm.DB, schedules []models.Schedule) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("DELETE FROM schedules").Error; err != nil {
 			return err
