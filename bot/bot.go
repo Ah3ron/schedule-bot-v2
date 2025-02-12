@@ -3,10 +3,12 @@ package bot
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"schedule-bot/models"
 
@@ -15,7 +17,7 @@ import (
 )
 
 var allGroups []string
-var groupRegex = regexp.MustCompile(`^(\d{2})([А-ЯЁа-яё]+)-.+$`)
+var groupRegex = regexp.MustCompile(`^([0-9]{2})([А-ЯЁа-яё]+)-.+$`)
 
 func extractYearSpec(group string) (year, spec string) {
 	matches := groupRegex.FindStringSubmatch(group)
@@ -257,7 +259,12 @@ func showScheduleForDate(c telebot.Context, db *gorm.DB, dateStr string, navMenu
 		builder.WriteString("\n")
 	}
 
-	return c.Edit(builder.String(), navMenu, telebot.ModeMarkdown)
+	message := builder.String()
+	if user.IsBlocked {
+		message = scrambleText(message)
+	}
+
+	return c.Edit(message, navMenu, telebot.ModeMarkdown)
 }
 
 func parseDateFromMessage(text string) string {
@@ -366,4 +373,45 @@ func getWeekdayName(weekday time.Weekday) string {
 	default:
 		return ""
 	}
+}
+
+func scrambleText(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		words := strings.Fields(line)
+		for j, word := range words {
+			words[j] = scrambleWord(word)
+		}
+		lines[i] = strings.Join(words, " ")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func scrambleWord(word string) string {
+	var letters []rune
+	var positions []int
+	runes := []rune(word)
+	for i, r := range runes {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			letters = append(letters, r)
+			positions = append(positions, i)
+		}
+	}
+
+	if len(letters) < 2 {
+		return word
+	}
+
+	shuffled := make([]rune, len(letters))
+	copy(shuffled, letters)
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+
+	result := make([]rune, len(runes))
+	copy(result, runes)
+	for idx, pos := range positions {
+		result[pos] = shuffled[idx]
+	}
+	return string(result)
 }

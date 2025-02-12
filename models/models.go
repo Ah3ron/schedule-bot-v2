@@ -14,4 +14,5 @@ type Schedule struct {
 type User struct {
 	ID        int64 `gorm:"primaryKey"`
 	GroupName string
+	IsBlocked bool `gorm:"default:false"`
 }
