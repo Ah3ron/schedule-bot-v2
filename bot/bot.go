@@ -41,7 +41,6 @@ func getUniqueYears() []string {
 	return years
 }
 
-// getSpecsForYear returns a sorted list of specs for a given year.
 func getSpecsForYear(year string) []string {
 	specSet := make(map[string]struct{})
 	for _, group := range allGroups {
@@ -81,7 +80,6 @@ func StartBot(token string, db *gorm.DB) {
 		log.Fatalf("Failed to create bot: %v", err)
 	}
 
-	// Define inline keyboard buttons and menus
 	mainMenu := &telebot.ReplyMarkup{ResizeKeyboard: true}
 	btnDay := mainMenu.Data("📆 Расписание", "day_schedule")
 	btnSettings := mainMenu.Data("⚙️ Настройки", "settings_menu")
@@ -232,11 +230,13 @@ func showScheduleForDate(c telebot.Context, db *gorm.DB, dateStr string, navMenu
 	}
 
 	if len(schedules) == 0 {
-		return c.Edit(fmt.Sprintf("Расписание на %s для группы %s не найдено.", dateStr, user.GroupName), navMenu)
+		date, _ := parseDate(dateStr)
+		return c.Edit(fmt.Sprintf("Расписание на %s (%s) для группы %s не найдено.", dateStr, getWeekdayName(date.Weekday()), user.GroupName), navMenu)
 	}
 
+	date, _ := parseDate(dateStr)
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("📅 Расписание на %s для группы %s:\n\n", dateStr, user.GroupName))
+	builder.WriteString(fmt.Sprintf("📅 Расписание на %s (%s) для группы %s:\n\n", dateStr, getWeekdayName(date.Weekday()), user.GroupName))
 
 	for _, sched := range schedules {
 		if sched.Time != "" {
@@ -345,4 +345,25 @@ func createGroupMenu(year, spec string) *telebot.ReplyMarkup {
 	}
 	menu.Inline(rows...)
 	return menu
+}
+
+func getWeekdayName(weekday time.Weekday) string {
+	switch weekday {
+	case time.Monday:
+		return "Понедельник"
+	case time.Tuesday:
+		return "Вторник"
+	case time.Wednesday:
+		return "Среда"
+	case time.Thursday:
+		return "Четверг"
+	case time.Friday:
+		return "Пятница"
+	case time.Saturday:
+		return "Суббота"
+	case time.Sunday:
+		return "Воскресенье"
+	default:
+		return ""
+	}
 }
